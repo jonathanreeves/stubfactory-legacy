@@ -1,0 +1,5 @@
+- add helper variable declarations to output
+- add doxygen documentation to stubfactory.cpp
+- move "using namespace" directives to the top of the output
+- add the required #includes to the output
+- long-term: remove "using namespace" directives from output and replace with fully qualified names
