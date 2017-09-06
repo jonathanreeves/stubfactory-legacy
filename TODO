@@ -1,5 +1,10 @@
-- add helper variable declarations to output
+
 - add doxygen documentation to stubfactory.cpp
-- move "using namespace" directives to the top of the output
-- add the required #includes to the output
+- Add auto-generated comment header
 - long-term: remove "using namespace" directives from output and replace with fully qualified names
+- clean up memory usage. Right now none of the ownership guidelines for clang are being followed. There
+  are memory leaks galore. Need to make sure things are cleaned up properly
+- Figure out how to initialize argument capture and default return values. This must be done
+  both in the declaration of the variables at the top of the output, and in the reset() function
+- generate a header for each stub that can extern all of the helper variables. This can be easily
+  done by hand in a unit test module by copying what's at the top of the stub output and adding "extern"

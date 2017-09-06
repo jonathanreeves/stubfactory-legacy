@@ -44,7 +44,8 @@ public:
     std::vector<const char *> argTypes;
 };
 
-std::vector<CXString> g_namespaces;
+static std::vector<CXString> g_namespaces;
+static std::vector<FunctionInfo> g_functions;
 
 /*!
  * @brief TODO
@@ -90,9 +91,52 @@ void fillFunctionInfo(CXCursor cursor, FunctionInfo &info, const char *className
 /*!
  * @brief TODO
  */
-void printFunctionInfo(FunctionInfo &info)
+void declareFunctionGlobalVariables(const char *stubName, const FunctionInfo &info)
 {
-    const char *funcPrefix = "file";
+    const char *funcPrefix = stubName;
+
+    if (info.className != NULL) {
+        funcPrefix = info.className;
+    }
+
+    // print the return variable if it exists
+    // TODO: figure out default initializer
+    if (info.retTypeKind != CXType_Void) {
+        printf("%s g_%s_%s_return;\n", info.retType, funcPrefix, info.name);
+    }
+    printf("uint32_t g_%s_%s_callCount = 0;\n", funcPrefix, info.name);
+
+    // print all argument capture variables
+    // TODO: figure out default initializer
+    for (size_t i = 0; i < info.argTypes.size(); i++) {
+        printf("%s g_%s_%s_%s;\n", info.argTypes[i], funcPrefix, info.name, info.argNames[i]);
+    }
+
+    // print the hook declaration
+    if (info.retTypeKind != CXType_Void) {
+        printf("%s ", info.retType);
+    } else {
+        printf("void ");
+    }
+    printf("(*g_%s_%s_hook)(", funcPrefix, info.name);
+    if (info.argTypes.size() > 0) {
+        for (size_t i = 0; i < info.argTypes.size() - 1; i++) {
+            printf("%s, ", info.argTypes[i]);
+        }
+        printf("%s", info.argTypes[info.argTypes.size() - 1]);
+    } else {
+        printf("void");
+    }
+    printf(");\n");
+    printf("\n");
+}
+
+/*!
+ * @brief TODO
+ */
+void printFunctionInfo(const char *stubName, const FunctionInfo &info)
+{
+    const char *funcPrefix = stubName;
 
     if (info.className != NULL) {
         funcPrefix = info.className;
@@ -141,6 +185,43 @@ void printFunctionInfo(FunctionInfo &info)
 /*!
  * @brief TODO
  */
+void printResetFunction(const char *stubName, const std::vector<FunctionInfo> &functions)
+{
+    printf("void stub_%s_reset(void)\n{\n", stubName);
+
+    // TODO: set all returns to their defaults:
+
+    // TODO: set all function args to their defaults:
+
+    // set all call counts to 0
+    for (unsigned int i = 0; i < functions.size(); i++) {
+        const char *funcPrefix = "file";
+
+        if (functions[i].className != NULL) {
+            funcPrefix = functions[i].className;
+        }
+        printf("    g_%s_%s_callCount = 0;\n", funcPrefix, functions[i].name);
+    }
+
+    printf("\n");
+
+    // set all hooks to NULL
+    for (unsigned int i = 0; i < functions.size(); i++) {
+        const char *funcPrefix = "file";
+
+        if (functions[i].className != NULL) {
+            funcPrefix = functions[i].className;
+        }
+        printf("    g_%s_%s_hook = NULL;\n", funcPrefix, functions[i].name);
+    }
+
+    printf("}\n\n");
+}
+
+
+/*!
+ * @brief TODO
+ */
 CXChildVisitResult classMethodVisitor(CXCursor cursor, CXCursor parent, CXClientData client_data)
 {
     CXCursorKind kind = clang_getCursorKind(cursor);
@@ -149,7 +230,7 @@ CXChildVisitResult classMethodVisitor(CXCursor cursor, CXCursor parent, CXClient
 
         FunctionInfo info;
         fillFunctionInfo(cursor, info, clang_getCString(*className));
-        printFunctionInfo(info);
+        g_functions.push_back(info);
     }
     return CXChildVisit_Continue;
 }
@@ -163,6 +244,7 @@ CXChildVisitResult nodeVisitor(CXCursor cursor, CXCursor, CXClientData)
 
     // skip all classes and functions not comming from the immediate file
     if (clang_Location_isFromMainFile(clang_getCursorLocation(cursor)) != 0) {
+
         CXCursorKind kind = clang_getCursorKind(cursor);
 
         // Capture namespaces so they can be "used" with a using directive
@@ -182,7 +264,7 @@ CXChildVisitResult nodeVisitor(CXCursor cursor, CXCursor, CXClientData)
         if (kind == CXCursorKind::CXCursor_FunctionDecl) {
             FunctionInfo info;
             fillFunctionInfo(cursor, info, NULL);
-            printFunctionInfo(info);
+            g_functions.push_back(info);
         }
         res = CXChildVisit_Recurse;
     }
@@ -246,10 +328,39 @@ int main(int argc, char **argv)
     CXCursor cursor = clang_getTranslationUnitCursor(translationUnit);
     clang_visitChildren(cursor, nodeVisitor, 0);
 
+    // Get file name and stub name info from the translation unit
+    CXString filePath = clang_getTranslationUnitSpelling(translationUnit);
+    std::string filePathStr(clang_getCString(filePath));
+    std::string fileNameStr = filePathStr.substr(0, filePathStr.find_last_of("\\/"));
+    // strip extension
+    std::string stubNameStr = fileNameStr.substr(0, fileNameStr.find_last_of("."));
+
+    // print results:
+
+    // includes
+    printf("#include <stdint.h>\n");
+    printf("#include <stdlib.h>\n");
+    printf("#include \"%s\"\n\n", filePathStr.c_str());
+
+    // namespaces
     for (size_t i = 0; i < g_namespaces.size(); i++) {
         if (strcmp("", clang_getCString(g_namespaces[i])) != 0) {
             printf("using namespace %s;\n", clang_getCString(g_namespaces[i]));
         }
+    }
+    printf("\n");
+
+    // variable declarations
+    for (size_t i = 0; i < g_functions.size(); i++) {
+        declareFunctionGlobalVariables(stubNameStr.c_str(), g_functions[i]);
+    }
+
+    // global stub reset function
+    printResetFunction(stubNameStr.c_str(), g_functions);
+
+    // function/method implementations
+    for (size_t i = 0; i < g_functions.size(); i++) {
+        printFunctionInfo(stubNameStr.c_str(), g_functions[i]);
     }
 
     // Release memory
