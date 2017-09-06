@@ -28,7 +28,9 @@
 #include <vector>
 
 /*!
- * @brief TODO
+ * @brief Stub function/method meta data class. Mainly used for
+ *        collecting information about a function or method as it
+ *        is encountered while traversing the AST
  */
 class FunctionInfo
 {
@@ -48,7 +50,15 @@ static std::vector<CXString> g_namespaces;
 static std::vector<FunctionInfo> g_functions;
 
 /*!
- * @brief TODO
+ * @brief Clang AST node callback for function arguments (children of a function)
+ * @param[in] cursor See libclang documentation
+ * @param[in] parent See libclang documentation
+ * @param[in] client_data See libclang documentation
+ *
+ * This function is called by libclang when a function or method declaration is
+ * traversed. The children of a function or method declaration will usually be
+ * its parameters (arguments), thus the main purpose of this function is to
+ * capture the parameter info for a given function or method.
  */
 CXChildVisitResult functionDeclParamVisitor(CXCursor cursor, CXCursor parent, CXClientData client_data)
 {
@@ -70,7 +80,16 @@ CXChildVisitResult functionDeclParamVisitor(CXCursor cursor, CXCursor parent, CX
 }
 
 /*!
- * @brief TODO
+ * @brief Given a clang AST cursor at a function or method declaration, fill
+ *        in a FunctionInfo meta data class with critical information
+ * @param[in] cursor A libclang AST cursor at the function or method of interest
+ * @param[out] info A FunctionInfo class instance to fill in with info
+ * @param[in] className The name of the class to which this method belongs. If it's
+ *                      a pure C function, className will be NULL
+ *
+ * This function will capture the top-level function info (name, return type, etc.)
+ * and also ask libclang to traverse the functions "children", which will provide
+ * function argument names and types.
  */
 void fillFunctionInfo(CXCursor cursor, FunctionInfo &info, const char *className)
 {
@@ -89,7 +108,16 @@ void fillFunctionInfo(CXCursor cursor, FunctionInfo &info, const char *className
 }
 
 /*!
- * @brief TODO
+ * @brief Generate and print all required "helper" variables for a given function
+ *        stub
+ * @param[in] stubName   the string name for this unit test stub
+ * @param[in] functions  reference to a FunctionInfo struct for a declared function
+ *
+ * For any function stub, a series of global variables are generated which can be
+ * used in writing unit tests to manipulate the behavior of the function. For
+ * example the return value can be set, and argument values for a function can
+ * be captured for checking in the test. This function emits the declarations
+ * for these variables.
  */
 void declareFunctionGlobalVariables(const char *stubName, const FunctionInfo &info)
 {
@@ -132,7 +160,10 @@ void declareFunctionGlobalVariables(const char *stubName, const FunctionInfo &in
 }
 
 /*!
- * @brief TODO
+ * @brief Generate and print a global stub function implementation based on
+ *        declarations encountered during parsing
+ * @param[in] stubName   the string name for this unit test stub
+ * @param[in] functions  reference to a FunctionInfo struct for a declared function
  */
 void printFunctionInfo(const char *stubName, const FunctionInfo &info)
 {
@@ -183,7 +214,11 @@ void printFunctionInfo(const char *stubName, const FunctionInfo &info)
 }
 
 /*!
- * @brief TODO
+ * @brief Generate and print a global stub reset() function which will return
+ *        the stub to its default state when called in unit tests
+ * @param[in] stubName   the string name for this unit test stub
+ * @param[in] functions  reference to an array of FunctionInfo structs for all
+ *                       functions stubbed in this unit test stub
  */
 void printResetFunction(const char *stubName, const std::vector<FunctionInfo> &functions)
 {
@@ -220,7 +255,15 @@ void printResetFunction(const char *stubName, const std::vector<FunctionInfo> &f
 
 
 /*!
- * @brief TODO
+ * @brief Clang AST node callback for C++ class method declarations
+ * @param[in] cursor See libclang documentation
+ * @param[in] parent See libclang documentation
+ * @param[in] client_data See libclang documentation
+ *
+ * This function is called by libclang when a function declaration is
+ * encountered in the AST. Our job is to read the information about the
+ * function encountered and put it into our own data structure that
+ * can be used for printing our stub code later.
  */
 CXChildVisitResult classMethodVisitor(CXCursor cursor, CXCursor parent, CXClientData client_data)
 {
@@ -236,9 +279,16 @@ CXChildVisitResult classMethodVisitor(CXCursor cursor, CXCursor parent, CXClient
 }
 
 /*!
- * @brief TODO
+ * @brief Clang AST node callback for the top level node
+ * @param[in] cursor See libclang documentation
+ * @param[in] parent See libclang documentation
+ * @param[in] client_data See libclang documentation
+ *
+ * This is the top level AST parser function. We will look for namespaces,
+ * C-function declarations and class method declarations from which we will
+ * generate stubs.
  */
-CXChildVisitResult nodeVisitor(CXCursor cursor, CXCursor, CXClientData)
+CXChildVisitResult nodeVisitor(CXCursor cursor, CXCursor parent, CXClientData client_data)
 {
     CXChildVisitResult res = CXChildVisit_Continue;
 
@@ -273,7 +323,7 @@ CXChildVisitResult nodeVisitor(CXCursor cursor, CXCursor, CXClientData)
 }
 
 /*!
- * @brief TODO
+ * @brief stubfactory main
  */
 int main(int argc, char **argv)
 {  
