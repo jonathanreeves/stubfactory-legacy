@@ -38,6 +38,7 @@ public:
     FunctionInfo() {}
     ~FunctionInfo() {}
 
+    CXCursorKind kind;
     const char *name;
     const char *retType;
     CXTypeKind retTypeKind;
@@ -83,6 +84,8 @@ CXChildVisitResult functionDeclParamVisitor(CXCursor cursor, CXCursor parent, CX
  * @brief Given a clang AST cursor at a function or method declaration, fill
  *        in a FunctionInfo meta data class with critical information
  * @param[in] cursor A libclang AST cursor at the function or method of interest
+ * @param[in] kind A libclang cursor "kind" describing what type of method or
+ *                 function this is (i.e. method, function, constructor, destructor)
  * @param[out] info A FunctionInfo class instance to fill in with info
  * @param[in] className The name of the class to which this method belongs. If it's
  *                      a pure C function, className will be NULL
@@ -91,13 +94,14 @@ CXChildVisitResult functionDeclParamVisitor(CXCursor cursor, CXCursor parent, CX
  * and also ask libclang to traverse the functions "children", which will provide
  * function argument names and types.
  */
-void fillFunctionInfo(CXCursor cursor, FunctionInfo &info, const char *className)
+void fillFunctionInfo(CXCursor cursor, CXCursorKind kind, FunctionInfo &info, const char *className)
 {
     CXType funcType = clang_getCursorType(cursor);
     CXType returnType = clang_getResultType(funcType);
     CXString typeName = clang_getTypeSpelling(returnType);
     CXString cursorName = clang_getCursorSpelling(cursor);
 
+    info.kind = kind;
     info.className = className;
     info.name = clang_getCString(cursorName);
     info.retType = clang_getCString(typeName);
@@ -118,10 +122,20 @@ void fillFunctionInfo(CXCursor cursor, FunctionInfo &info, const char *className
  * example the return value can be set, and argument values for a function can
  * be captured for checking in the test. This function emits the declarations
  * for these variables.
+ *
+ * Note that since these variables must be easily manipulable, all const qualifiers
+ * should be removed in the declarations.
  */
 void declareFunctionGlobalVariables(const char *stubName, const FunctionInfo &info)
 {
     const char *funcPrefix = stubName;
+    const char *funcNameForStubVariables = info.name;
+
+    if (info.kind == CXCursor_Constructor) {
+        funcNameForStubVariables = "constructor";
+    } else if (info.kind == CXCursor_Destructor) {
+        funcNameForStubVariables = "destructor";
+    }
 
     if (info.className != NULL) {
         funcPrefix = info.className;
@@ -130,14 +144,14 @@ void declareFunctionGlobalVariables(const char *stubName, const FunctionInfo &in
     // print the return variable if it exists
     // TODO: figure out default initializer
     if (info.retTypeKind != CXType_Void) {
-        printf("%s g_%s_%s_return;\n", info.retType, funcPrefix, info.name);
+        printf("%s g_%s_%s_return;\n", info.retType, funcPrefix, funcNameForStubVariables);
     }
-    printf("uint32_t g_%s_%s_callCount = 0;\n", funcPrefix, info.name);
+    printf("uint32_t g_%s_%s_callCount = 0;\n", funcPrefix, funcNameForStubVariables);
 
     // print all argument capture variables
     // TODO: figure out default initializer
     for (size_t i = 0; i < info.argTypes.size(); i++) {
-        printf("%s g_%s_%s_%s;\n", info.argTypes[i], funcPrefix, info.name, info.argNames[i]);
+        printf("%s g_%s_%s_%s;\n", info.argTypes[i], funcPrefix, funcNameForStubVariables, info.argNames[i]);
     }
 
     // print the hook declaration
@@ -146,7 +160,7 @@ void declareFunctionGlobalVariables(const char *stubName, const FunctionInfo &in
     } else {
         printf("void ");
     }
-    printf("(*g_%s_%s_hook)(", funcPrefix, info.name);
+    printf("(*g_%s_%s_hook)(", funcPrefix, funcNameForStubVariables);
     if (info.argTypes.size() > 0) {
         for (size_t i = 0; i < info.argTypes.size() - 1; i++) {
             printf("%s, ", info.argTypes[i]);
@@ -168,16 +182,30 @@ void declareFunctionGlobalVariables(const char *stubName, const FunctionInfo &in
 void printFunctionInfo(const char *stubName, const FunctionInfo &info)
 {
     const char *funcPrefix = stubName;
+    // the function name for stub-related variables may be different than the
+    // name of the function itself. This is because constructors and destructors
+    // in a class may require special handling
+    const char *funcNameForStubVariables = info.name;
+    const char *funcName = info.name;
+
+    if (info.kind == CXCursor_Constructor) {
+        funcNameForStubVariables = "constructor";
+    } else if (info.kind == CXCursor_Destructor) {
+        funcNameForStubVariables  = "destructor";
+    }
 
     if (info.className != NULL) {
         funcPrefix = info.className;
     }
 
-    printf("%s ", info.retType);
+    // don't print a return type for constructors and destructors
+    if ((info.kind != CXCursor_Constructor) && (info.kind != CXCursor_Destructor)) {
+        printf("%s ", info.retType);
+    }
     if (info.className != NULL) {
         printf("%s::", info.className);
     }
-    printf("%s(", info.name);
+    printf("%s(", funcName);
 
     if (info.argTypes.size() > 0) {
         for (size_t i = 0; i < info.argTypes.size() - 1; i++) {
@@ -188,18 +216,18 @@ void printFunctionInfo(const char *stubName, const FunctionInfo &info)
     printf(")\n{\n");
 
     if (info.retTypeKind != CXType_Void) {
-        printf("    %s ret = g_%s_%s_return;\n", info.retType, funcPrefix, info.name);
+        printf("    %s ret = g_%s_%s_return;\n", info.retType, funcPrefix, funcNameForStubVariables);
     }
-    printf("    g_%s_%s_callCount++;\n", funcPrefix, info.name);
+    printf("    g_%s_%s_callCount++;\n", funcPrefix, funcNameForStubVariables);
     for (size_t i = 0; i < info.argTypes.size(); i++) {
-        printf("    g_%s_%s_%s = %s;\n", funcPrefix, info.name, info.argNames[i], info.argNames[i]);
+        printf("    g_%s_%s_%s = %s;\n", funcPrefix, funcNameForStubVariables, info.argNames[i], info.argNames[i]);
     }
-    printf("    if (g_%s_%s_hook != NULL) {\n", funcPrefix, info.name);
+    printf("    if (g_%s_%s_hook != NULL) {\n", funcPrefix, funcNameForStubVariables);
     printf("        ");
     if (info.retTypeKind != CXType_Void) {
         printf("ret = ");
     }
-    printf("g_%s_%s_hook(", funcPrefix, info.name);
+    printf("g_%s_%s_hook(", funcPrefix, funcNameForStubVariables);
     if (info.argNames.size() > 0) {
         for (size_t i = 0; i < info.argNames.size() - 1; i++) {
             printf("%s, ", info.argNames[i]);
@@ -231,11 +259,18 @@ void printResetFunction(const char *stubName, const std::vector<FunctionInfo> &f
     // set all call counts to 0
     for (unsigned int i = 0; i < functions.size(); i++) {
         const char *funcPrefix = "file";
+        const char *funcNameForStubVariables = functions[i].name;
+
+        if (functions[i].kind == CXCursor_Constructor) {
+            funcNameForStubVariables = "constructor";
+        } else if (functions[i].kind == CXCursor_Destructor) {
+            funcNameForStubVariables  = "destructor";
+        }
 
         if (functions[i].className != NULL) {
             funcPrefix = functions[i].className;
         }
-        printf("    g_%s_%s_callCount = 0;\n", funcPrefix, functions[i].name);
+        printf("    g_%s_%s_callCount = 0;\n", funcPrefix, funcNameForStubVariables);
     }
 
     printf("\n");
@@ -243,11 +278,18 @@ void printResetFunction(const char *stubName, const std::vector<FunctionInfo> &f
     // set all hooks to NULL
     for (unsigned int i = 0; i < functions.size(); i++) {
         const char *funcPrefix = "file";
+        const char *funcNameForStubVariables = functions[i].name;
+
+        if (functions[i].kind == CXCursor_Constructor) {
+            funcNameForStubVariables = "constructor";
+        } else if (functions[i].kind == CXCursor_Destructor) {
+            funcNameForStubVariables  = "destructor";
+        }
 
         if (functions[i].className != NULL) {
             funcPrefix = functions[i].className;
         }
-        printf("    g_%s_%s_hook = NULL;\n", funcPrefix, functions[i].name);
+        printf("    g_%s_%s_hook = NULL;\n", funcPrefix, funcNameForStubVariables);
     }
 
     printf("}\n\n");
@@ -268,11 +310,13 @@ void printResetFunction(const char *stubName, const std::vector<FunctionInfo> &f
 CXChildVisitResult classMethodVisitor(CXCursor cursor, CXCursor parent, CXClientData client_data)
 {
     CXCursorKind kind = clang_getCursorKind(cursor);
-    if(kind == CXCursorKind::CXCursor_CXXMethod) {
+    if(kind == CXCursorKind::CXCursor_CXXMethod ||
+       kind == CXCursorKind::CXCursor_Constructor ||
+       kind == CXCursorKind::CXCursor_Destructor) {
         CXString *className = reinterpret_cast<CXString *>(client_data);
 
         FunctionInfo info;
-        fillFunctionInfo(cursor, info, clang_getCString(*className));
+        fillFunctionInfo(cursor, kind, info, clang_getCString(*className));
         g_functions.push_back(info);
     }
     return CXChildVisit_Continue;
@@ -313,7 +357,7 @@ CXChildVisitResult nodeVisitor(CXCursor cursor, CXCursor parent, CXClientData cl
         // Explore "bare" C functions (outside of a class)
         if (kind == CXCursorKind::CXCursor_FunctionDecl) {
             FunctionInfo info;
-            fillFunctionInfo(cursor, info, NULL);
+            fillFunctionInfo(cursor, kind, info, NULL);
             g_functions.push_back(info);
         }
         res = CXChildVisit_Recurse;
@@ -381,7 +425,14 @@ int main(int argc, char **argv)
     // Get file name and stub name info from the translation unit
     CXString filePath = clang_getTranslationUnitSpelling(translationUnit);
     std::string filePathStr(clang_getCString(filePath));
-    std::string fileNameStr = filePathStr.substr(0, filePathStr.find_last_of("\\/"));
+
+    size_t extStart = filePathStr.find_last_of("\\/");
+    if (extStart == std::string::npos) {
+        extStart = 0;
+    } else {
+        extStart++;
+    }
+    std::string fileNameStr = filePathStr.substr(extStart);
     // strip extension
     std::string stubNameStr = fileNameStr.substr(0, fileNameStr.find_last_of("."));
 

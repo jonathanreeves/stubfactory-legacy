@@ -16,3 +16,4 @@
 - Handle operator overloading?
 - Handle functions/methods with const qualifier (need to add to the implementation)
 - Handle const function arguments (captured values can't be const)
+- Don't define stubs for functions which have inline definitions
