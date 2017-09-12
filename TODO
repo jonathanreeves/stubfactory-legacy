@@ -1,5 +1,5 @@
 - Add auto-generated comment header
-- long-term: remove "using namespace" directives from output and replace with fully qualified names
+- long-term: remove "using namespace" directives from output and replace with fully qualified names. Also enclose implementations in relevant namespace
 - clean up memory usage. Right now none of the ownership guidelines for clang are being followed. There
   are memory leaks galore. Need to make sure things are cleaned up properly
 - Figure out how to initialize argument capture and default return values. This must be done
@@ -8,3 +8,11 @@
   done by hand in a unit test module by copying what's at the top of the stub output and adding "extern"
 - Find a better way to make use of client_data so we don't have to rely on global variables for
   collection function information.
+- Create stubs for all constructors and destructors
+- Handle overloaded functions with different input args (same name). Right now this just makes duplicate stubs
+- Handle pass-by-reference inputs to functions (capture as pointer)
+- Figure out header include path
+- Handle const members of classes that must be initialized in a constructor
+- Handle operator overloading?
+- Handle functions/methods with const qualifier (need to add to the implementation)
+- Handle const function arguments (captured values can't be const)
